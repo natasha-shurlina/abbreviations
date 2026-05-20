@@ -122,6 +122,10 @@ _DOTTED_GROUP_RE = re.compile(
 )
 _ACRONYM_RE = re.compile(r"\b[А-ЯЁA-Z]{2,3}\b")
 _SHORT_WORD_RE = re.compile(rf"\b{_LETTER}{{2,12}}\b(?!\.)")
+_HYPHEN_RE = re.compile(r"\b[А-Яа-яЁёA-Za-z]{2,8}-[А-Яа-яЁёA-Za-z]{2,8}\b")
+
+# Список слов, которые всегда пропускаются внутри составных сокращений
+STOP_WORDS = {"во", "из", "за", "до", "по", "на", "под", "над", "без", "со", "что"}
 
 # Поиск сокращений
 def find_candidates(text):
@@ -137,6 +141,13 @@ def find_candidates(text):
         occupied.append((s, e))
 
     for m in _ACRONYM_RE.finditer(text):
+        s, e = m.span()
+        if overlaps(s, e):
+            continue
+        cands.append(Candidate(text=m.group(0), start=s, has_dot=False))
+        occupied.append((s, e))
+
+    for m in _HYPHEN_RE.finditer(text):
         s, e = m.span()
         if overlaps(s, e):
             continue
@@ -175,15 +186,34 @@ class DeterministicChecker:
             findings.append(self.classify(cand))
         return findings
 
-    def classify(self, cand):
+    def classify(self, cand, inside_compound=False):
         norm = normalize(cand.text)
 
         if norm in self.rules.allowed_forms:
-            full = self.rules.allowed_to_full.get(norm)
+            expected = self.rules.allowed_original.get(norm)
+            # Проверяем регистр только если expected полностью заглавный
+            # и если фрагмент не является инициалом
+            if expected is not None:
+                expected_without_dot = expected.rstrip('.')
+                if expected_without_dot.isupper() and len(expected_without_dot) > 1:
+                    if cand.text != expected:
+                        full = self.rules.allowed_to_full.get(norm)
+                        full_word = self.rules.full_original.get(full, "") if full else ""
+                        note = f"Неверный регистр. Ожидается: {expected}"
+                        if full_word:
+                            note += f" (полное слово: {full_word})"
+                        return Finding(
+                            fragment=cand.text,
+                            position=cand.start,
+                            expected=expected,
+                            verdict=Verdict.ERROR,
+                            source=Source.DETERMINISTIC,
+                            note=note,
+                        )
             return Finding(
                 fragment=cand.text,
                 position=cand.start,
-                expected=self.rules.allowed_original.get(norm),
+                expected=expected,
                 verdict=Verdict.OK,
                 source=Source.DETERMINISTIC,
             )
@@ -203,7 +233,7 @@ class DeterministicChecker:
         if " " in norm:
             return self.classify_spaced(cand)
 
-        return self.classify_fuzzy(cand, norm)
+        return self.classify_fuzzy(cand, norm, inside_compound)
 
     # Составное сокращение через дефис
     def classify_compound(self, cand):
@@ -212,7 +242,7 @@ class DeterministicChecker:
         offset = cand.start
         for part in parts:
             sub_cand = Candidate(text=part, start=offset, has_dot="." in part)
-            sub_findings.append(self.classify(sub_cand))
+            sub_findings.append(self.classify(sub_cand, inside_compound=True))
             offset += len(part) + 1
 
         if all(f.verdict in (Verdict.OK, Verdict.SKIP) for f in sub_findings):
@@ -224,37 +254,45 @@ class DeterministicChecker:
                 source=Source.DETERMINISTIC,
             )
 
-        bad = [f for f in sub_findings if f.verdict == Verdict.ERROR]
-        unk = [f for f in sub_findings if f.verdict == Verdict.UNKNOWN]
-        if bad:
-            # Собираем ожидаемое составное сокращение
-            expected_parts = []
-            for f in sub_findings:
-                if f.verdict == Verdict.ERROR and f.expected:
-                    expected_parts.append(f.expected)
-                else:
-                    expected_parts.append(f.fragment)
-            full_expected = "-".join(expected_parts)
+        error_parts = [f for f in sub_findings if f.verdict == Verdict.ERROR]
+        unknown_parts = [f for f in sub_findings if f.verdict == Verdict.UNKNOWN]
+        if len(error_parts) == 1 and not unknown_parts:
+            other_parts = [f for f in sub_findings if f != error_parts[0]]
+            if all(f.verdict == Verdict.SKIP for f in other_parts):
+                expected = error_parts[0].expected
+                details = f"«{error_parts[0].fragment}» → «{error_parts[0].expected}»"
+                return Finding(
+                    fragment=cand.text,
+                    position=cand.start,
+                    expected=expected,
+                    verdict=Verdict.ERROR,
+                    source=Source.DETERMINISTIC,
+                    note=details,
+                )
+        expected_parts = []
+        details = []
+        for f in sub_findings:
+            if f.verdict == Verdict.OK:
+                expected_parts.append(f.expected or f.fragment)
+            elif f.verdict == Verdict.ERROR:
+                expected_parts.append(f.expected or f.fragment)
+                details.append(
+                    f"«{f.fragment}» → «{f.expected}»" if f.expected
+                    else f"«{f.fragment}» (не распознано)"
+                )
+            else: 
+                expected_parts.append(f.fragment)
+                if f.verdict == Verdict.UNKNOWN:
+                    details.append(f"«{f.fragment}» не найдено в правилах")
 
-            details = "; ".join(
-                f"«{f.fragment}» → возможно «{f.expected}»" if f.expected
-                else f"«{f.fragment}» (не распознано)"
-                for f in bad
-            )
-            return Finding(
-                fragment=cand.text,
-                position=cand.start,
-                expected=full_expected,
-                verdict=Verdict.ERROR,
-                source=Source.DETERMINISTIC,
-                note=details,
-            )
+        full_expected = "-".join(expected_parts)
         return Finding(
             fragment=cand.text,
             position=cand.start,
-            expected=None,
-            verdict=Verdict.UNKNOWN,
+            expected=full_expected,
+            verdict=Verdict.ERROR,
             source=Source.DETERMINISTIC,
+            note="; ".join(details),
         )
 
     def classify_spaced(self, cand):
@@ -276,7 +314,6 @@ class DeterministicChecker:
             )
 
         bad = [f for f in sub_findings if f.verdict == Verdict.ERROR]
-        unk = [f for f in sub_findings if f.verdict == Verdict.UNKNOWN]
         if bad:
             expected_parts = []
             for f in sub_findings:
@@ -307,7 +344,7 @@ class DeterministicChecker:
             source=Source.DETERMINISTIC,
         )
 
-    def classify_fuzzy(self, cand, norm):
+    def classify_fuzzy(self, cand, norm, inside_compound=False):
         # инициалы
         if cand.has_dot and len(cand.text.rstrip(".")) == 1:
             return Finding(
@@ -315,7 +352,7 @@ class DeterministicChecker:
                 expected=None, verdict=Verdict.SKIP,
                 source=Source.DETERMINISTIC,
             )
-        # абревиатура, не проверяем, если больше трех букв
+        # аббревиатура, не проверяем, если больше трех букв
         if cand.text.isupper() and len(cand.text) > 3:
             return Finding(
                 fragment=cand.text,
@@ -324,7 +361,19 @@ class DeterministicChecker:
                 verdict=Verdict.SKIP,
                 source=Source.DETERMINISTIC,
             )
-        if not cand.has_dot and not cand.text.isupper():
+        # внутри составного: если слово входит в стоп-список, пропускаем
+        if inside_compound and not cand.has_dot and not cand.text.isupper():
+            if norm in STOP_WORDS:
+                return Finding(
+                    fragment=cand.text,
+                    position=cand.start,
+                    expected=None,
+                    verdict=Verdict.SKIP,
+                    source=Source.DETERMINISTIC,
+                    note="",
+                )
+        # обычное слово без точки пропускаем, если не внутри составного
+        if not cand.has_dot and not cand.text.isupper() and not inside_compound:
             return Finding(
                 fragment=cand.text,
                 position=cand.start,
@@ -342,12 +391,10 @@ class DeterministicChecker:
             return self.unrecognized(cand)
         if best_dist <= local_threshold:
             expected_original = self.original_of(best_target, "allowed")
-            # получаем полное слово из правил
             full_word = ""
             if best_target in self.rules.allowed_to_full:
                 full_norm = self.rules.allowed_to_full[best_target]
                 full_word = self.rules.full_original.get(full_norm, "")
-            # формируем примечание с сокращением и полным словом
             if full_word:
                 note = f"Возможно, имелось в виду: {expected_original} (полное слово: {full_word})"
             else:
@@ -381,7 +428,6 @@ class DeterministicChecker:
             if dist <= self.config.threshold:
                 return best, dist
 
-        # ищем prefix_candidates
         prefix_candidates = []
         for t in pool:
             t_no_dot = t.replace('.', '')
@@ -433,18 +479,44 @@ class DeterministicChecker:
             return self.rules.allowed_original.get(norm, norm)
         return self.rules.full_original.get(norm, norm)
 
-# LLM 
+# LLM
 def enrich_with_llm(findings, text, llm_provider: LLMProvider):
     if not llm_provider:
         return [f.to_dict() for f in findings]
 
-    enriched = []
-    for f in findings:
-        d = f.to_dict()
+    items = []
+    for idx, f in enumerate(findings):
         if f.verdict in (Verdict.ERROR, Verdict.UNKNOWN):
             ctx = context_around(text, f.position, len(f.fragment))
-            llm_answer = llm_provider.ask(f.fragment, ctx)
-            d["llm_note"] = llm_answer
+            items.append((idx, f, ctx))
+
+    # не более 10 сокращений или 1000 символов суммарной длины контекста
+    batches = []
+    batch = []
+    batch_len = 0
+    for idx, f, ctx in items:
+        item_len = len(ctx) + len(f.fragment) + 10
+        if len(batch) >= 10 or (batch_len + item_len > 1000 and batch):
+            batches.append(batch)
+            batch = []
+            batch_len = 0
+        batch.append((idx, f, ctx))
+        batch_len += item_len
+    if batch:
+        batches.append(batch)
+
+    answers_by_index = {}
+    for batch in batches:
+        frags_ctxs = [(f.fragment, ctx) for idx, f, ctx in batch]
+        batch_answers = llm_provider.ask_batch(frags_ctxs)
+        for (idx, f, ctx), ans in zip(batch, batch_answers):
+            answers_by_index[idx] = ans
+
+    enriched = []
+    for idx, f in enumerate(findings):
+        d = f.to_dict()
+        if idx in answers_by_index:
+            d["llm_note"] = answers_by_index[idx]
         enriched.append(d)
     return enriched
 
