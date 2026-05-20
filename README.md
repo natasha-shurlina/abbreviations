@@ -44,34 +44,69 @@ examples.md - Пример вывода результата
 
 ---
 
-## Установка
+## Установка и запуск
 
-```bash
+### Windows
+
+**Установка зависимости:**
+```cmd
 pip install pyyaml huggingface_hub
+```
+
+**Запуск без LLM, вывод в терминал:**
+```cmd
+python det.py -i sample.md -r rules.yaml
+```
+
+**Запуск с LLM, вывод в терминал:**
+```cmd
+set HF_TOKEN=hf_ваш_токен
+python det.py -i sample.md -r rules.yaml --llm
+```
+
+**Запуск без LLM, с сохранением отчёта:**
+```cmd
+python det.py -i sample.md -r rules.yaml -o result.json
+```
+
+**Запуск с LLM, с сохранением отчёта:**
+```cmd
+set HF_TOKEN=hf_ваш_токен
+python det.py -i sample.md -r rules.yaml --llm -o result.json
 ```
 
 ---
 
-## Запуск
+### macOS/Linux
 
-**Без LLM:**
+**Установка зависимости:**
+```bash
+pip3 install pyyaml huggingface_hub
+```
+
+**Запуск без LLM, вывод в терминал:**
 ```bash
 python3 det.py -i sample.md -r rules.yaml
 ```
 
-**С сохранением отчёта:**
-```bash
-python3 det.py -i sample.md -r rules.yaml -o report.json
-```
-
-**С LLM:**
+**Запуск с LLM, вывод в терминал:**
 ```bash
 export HF_TOKEN="hf_ваш_токен"
-python3 det.py -i sample.md -r rules.yaml --llm -o report.json
+python3 det.py -i sample.md -r rules.yaml --llm
+```
+
+**Запуск без LLM, с сохранением отчёта:**
+```bash
+python3 det.py -i sample.md -r rules.yaml -o result.json
+```
+
+**Запуск с LLM, с сохранением отчёта:**
+```bash
+export HF_TOKEN="hf_ваш_токен"
+python3 det.py -i sample.md -r rules.yaml --llm -o result.json
 ```
 
 ---
-
 
 ## Входные файлы
 
