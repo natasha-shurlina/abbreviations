@@ -1,0 +1,42 @@
+{
+  "mode": "det",
+  "input": "texts/doc2.txt",
+  "errors": [
+    {
+      "fragment": "инжен.-констр.",
+      "position": 0,
+      "expected": "инж.-констр.",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "«инжен.» → «инж.»"
+    },
+    {
+      "fragment": "подпис.",
+      "position": 38,
+      "expected": "подп.",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "Возможно, имелось в виду: подп. (полное слово: Подпись)"
+    },
+    {
+      "fragment": "конь.",
+      "position": 137,
+      "expected": "КО",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "Возможно, имелось в виду: КО (полное слово: Конструкторский отдел)"
+    }
+  ],
+  "skipped_count": 7,
+  "allowed_found": [
+    "Гл. спец.",
+    "КД",
+    "ТТ",
+    "разраб."
+  ],
+  "comparison": {
+    "true_positive": 0.5,
+    "false_negative": 0.25,
+    "false_positive": 0.25
+  }
+}

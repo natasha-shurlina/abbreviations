@@ -1,0 +1,56 @@
+{
+  "mode": "det",
+  "input": "texts/doc1.txt",
+  "errors": [
+    {
+      "fragment": "Разр.",
+      "position": 0,
+      "expected": "разраб.",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "Возможно, имелось в виду: разраб. (полное слово: Разработал)"
+    },
+    {
+      "fragment": "ГИБ",
+      "position": 138,
+      "expected": "ГИП",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "Возможно, имелось в виду: ГИП (полное слово: Главный инженер проекта)"
+    },
+    {
+      "fragment": "кол-во",
+      "position": 163,
+      "expected": "кол.",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "«кол» → «кол.»"
+    },
+    {
+      "fragment": "бч",
+      "position": 185,
+      "expected": "БЧ",
+      "verdict": "ОШИБКА",
+      "source": "det",
+      "note": "Неверный регистр. Ожидается: БЧ (полное слово: Без чертежа)"
+    }
+  ],
+  "skipped_count": 15,
+  "allowed_found": [
+    "БЧ",
+    "Гл. инж.",
+    "КПД",
+    "Н. контр.",
+    "Нач. отд.",
+    "П.",
+    "Пров.",
+    "С.",
+    "Утв.",
+    "шт."
+  ],
+  "comparison": {
+    "true_positive": 1.0,
+    "false_negative": 0.0,
+    "false_positive": 0.0
+  }
+}
